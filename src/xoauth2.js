@@ -92,7 +92,7 @@ class XOAuth {
 	 * Handle the OAuth callback, exchange code for tokens, and fetch user data.
 	 * @param {string} code - The authorization code received from the OAuth provider.
 	 * @returns {Promise<Object>} The user data including access and refresh tokens.
-	 * @throws {Error} If authentication fails.
+	 * @throws {AuthenticationError} If authentication fails.
 	 */
 	async handleCallback(code, session) {
 		try {
@@ -134,7 +134,7 @@ class XOAuth {
 			return this.session.user
 		} catch (error) {
 			console.error("Error in OAuth callback:", error.message)
-			throw new Error("Authentication failed")
+			throw new AuthenticationError("Authentication failed: " + error.message)
 		}
 	}
 
@@ -176,99 +176,93 @@ class XOAuth {
 	 * @param {Object} [data={}] - The request data.
 	 * @param {Object} [headers={}] - Additional headers.
 	 * @returns {Promise<Object>} The parsed JSON response.
-	 * @throws {Error} If the request fails or returns an error status.
+	 * @throws {NetworkError} If the request fails or returns an error status.
 	 */
 	async sendRequest(method, url, data = {}, headers = {}) {
-		url = this.API_BASE_URL + url
-
-		const options = {
-			method,
-			headers: {
-				...headers
-			}
-		}
-
-		if (method === "GET" && Object.keys(data).length) {
-			const params = new URLSearchParams(data)
-			url += `?${params}`
-		} else if (method !== "GET") {
-			if (headers["Content-Type"] === "application/x-www-form-urlencoded") {
-				options.body = new URLSearchParams(data)
-			} else {
-				options.body = JSON.stringify(data)
-				options.headers["Content-Type"] = "application/json"
-			}
-		}
-
-		let response = await fetch(url, options)
-
-		if (
-			response.status === 401 &&
-			this.session &&
-			this.session.user &&
-			this.session.user.refreshToken
-		) {
+		return this.retryWithExponentialBackoff(async () => {
 			try {
-				await this.refreshToken()
-				// Update the headers with the new access token
-				options.headers.Authorization = `Bearer ${this.session.user.accessToken}`
-				// Retry the request
-				response = await fetch(url, options)
+				url = this.API_BASE_URL + url;
+				const options = {
+					method,
+					headers: { ...headers }
+				};
+
+				if (method === "GET" && Object.keys(data).length) {
+					const params = new URLSearchParams(data);
+					url += `?${params}`;
+				} else if (method !== "GET") {
+					if (headers["Content-Type"] === "application/x-www-form-urlencoded") {
+						options.body = new URLSearchParams(data);
+					} else {
+						options.body = JSON.stringify(data);
+						options.headers["Content-Type"] = "application/json";
+					}
+				}
+
+				let response = await fetch(url, options);
+
+				if (response.status === 401) {
+					if (this.session && this.session.user && this.session.user.refreshToken) {
+						try {
+							await this.refreshToken();
+							options.headers.Authorization = `Bearer ${this.session.user.accessToken}`;
+							response = await fetch(url, options);
+						} catch (error) {
+							throw new AuthenticationError("Token refresh failed: " + error.message);
+						}
+					} else {
+						throw new AuthenticationError("Unauthorized and unable to refresh token");
+					}
+				}
+
+				if (response.status === 429) {
+					throw new RateLimitError(`Rate limit exceeded. Status: ${response.status}`);
+				}
+
+				if (!response.ok) {
+					const errorData = await response.json();
+					throw new XOAuthError(`HTTP error! status: ${response.status}, message: ${errorData.error}`, 'HTTP_ERROR');
+				}
+
+				return response.json();
 			} catch (error) {
-				console.error("Token refresh failed:", error)
-				throw new Error("Authentication failed")
+				if (error instanceof XOAuthError) {
+					throw error;
+				} else {
+					throw new NetworkError("Network error: " + error.message);
+				}
 			}
-		}
-
-		if (response.status === 429) {
-			throw new Error(`Rate limit exceeded. Status: ${response.status}`)
-		}
-
-		if (!response.ok) {
-			const errorData = await response.json()
-			throw new Error(
-				`HTTP error! status: ${response.status}, message: ${errorData.error}`
-			)
-		}
-
-		//console.log(this.session)
-
-		return response.json()
+		});
 	}
 
 	/**
 	 * Refresh the access token using the refresh token.
 	 * @returns {Promise<void>}
-	 * @throws {Error} If token refresh fails.
+	 * @throws {AuthenticationError} If token refresh fails.
 	 */
 	async refreshToken() {
-		try {
+		return this.retryWithExponentialBackoff(async () => {
 			const response = await fetch(this.API_BASE_URL + "oauth2/token", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/x-www-form-urlencoded",
-					Authorization:
-						"Basic " + btoa(`${this.clientId}:${this.clientSecret}`)
+					Authorization: "Basic " + btoa(`${this.clientId}:${this.clientSecret}`)
 				},
 				body: new URLSearchParams({
 					refresh_token: this.session.user.refreshToken,
 					grant_type: "refresh_token",
 					client_id: this.clientId
 				})
-			})
+			});
 
 			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`)
+				throw new AuthenticationError(`HTTP error! status: ${response.status}`);
 			}
 
-			const tokenData = await response.json()
-
-			this.session.user.accessToken = tokenData.access_token
-			this.session.user.refreshToken = tokenData.refresh_token
-		} catch (error) {
-			console.error("Error refreshing token:", error.message)
-			throw new Error("Token refresh failed")
-		}
+			const tokenData = await response.json();
+			this.session.user.accessToken = tokenData.access_token;
+			this.session.user.refreshToken = tokenData.refresh_token;
+		});
 	}
 
 	/**
@@ -325,7 +319,64 @@ class XOAuth {
 	async delete(endpoint, data = {}, headers = {}) {
 		return this.sendRequest("DELETE", endpoint, data, headers)
 	}
+
+	/**
+	 * Retry an operation with exponential backoff.
+	 * @param {Function} operation - The operation to retry.
+	 * @param {number} maxRetries - The maximum number of retries.
+	 * @param {number} baseDelay - The base delay for the backoff.
+	 * @returns {Promise<any>} The result of the operation.
+	 */
+	async retryWithExponentialBackoff(operation, maxRetries = 5, baseDelay = 1000) {
+		for (let attempt = 0; attempt < maxRetries; attempt++) {
+			try {
+				return await operation();
+			} catch (error) {
+				if (attempt === maxRetries - 1) throw error;
+				
+				if (error instanceof NetworkError || error instanceof RateLimitError) {
+					const delay = baseDelay * Math.pow(2, attempt);
+					const jitter = Math.random() * 1000;
+					console.log(`Attempt ${attempt + 1} failed. Retrying in ${delay + jitter}ms`);
+					await new Promise(resolve => setTimeout(resolve, delay + jitter));
+				} else {
+					throw error;
+				}
+			}
+		}
+	}
 }
+
+class XOAuthError extends Error {
+  constructor(message, code) {
+    super(message);
+    this.name = 'XOAuthError';
+    this.code = code;
+  }
+}
+
+class AuthenticationError extends XOAuthError {
+  constructor(message) {
+    super(message, 'AUTHENTICATION_ERROR');
+    this.name = 'AuthenticationError';
+  }
+}
+
+class NetworkError extends XOAuthError {
+  constructor(message) {
+    super(message, 'NETWORK_ERROR');
+    this.name = 'NetworkError';
+  }
+}
+
+class RateLimitError extends XOAuthError {
+  constructor(message) {
+    super(message, 'RATE_LIMIT_ERROR');
+    this.name = 'RateLimitError';
+  }
+}
+
+export { XOAuthError, AuthenticationError, NetworkError, RateLimitError };
 export default XOAuth;
 
 // For CommonJS compatibility (optional)
