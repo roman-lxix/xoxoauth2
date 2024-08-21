@@ -1,25 +1,8 @@
 # XOXOAuth2
 
-A simple library for X (Twitter) OAuth 2.0 Authentication.
-
-## Node.js Version Requirements
-
-This XOXOAuth2 library requires a minimum Node.js version of 18.0.0 due to its use of the global Fetch API and Web Crypto API without additional polyfills.
-
-- **Minimum version**: 18.0.0
-- **Recommended version**: Latest LTS version (20.x as of August 2024)
-
-To check your Node.js version, run:
-
-```bash
-node --version
-```
-
-Make sure you're using a compatible version before installing and using this library.
+XOXOAuth2 is a simple OAuth 2.0 client library for Node.js, designed to work with the X (Twitter) OAuth 2.0 API.
 
 ## Installation
-
-To install the XOXOAuth2 library, run the following command in your project directory:
 
 ```bash
 npm install roman-lxix/xoxoauth2
@@ -27,131 +10,142 @@ npm install roman-lxix/xoxoauth2
 
 ## Usage
 
-Here's a simplified example of how to use the XO-Auth library for authentication in your JavaScript project:
-
-1. Import the library:
+First, initialize the XOXOAuth2 client:
 
 ```javascript
-const XOAuth = require("xoxoauth2")
-```
+const XOAuth2 = require("xoxoauth2")
 
-2. Initialize the XOAuth client:
-
-```javascript
-const xoAuth = new XOAuth(
+const xoAuth = new XOAuth2(
 	"YOUR_CLIENT_ID",
 	"YOUR_CLIENT_SECRET",
-	"YOUR_REDIRECT_URI"
+	"http://your/callback/url"
 )
 ```
 
-3. Generate the authorization URL:
+#### You may use any object for a session, but in this example we assuming an express.js session
+
+Be sure to manage your sessions properly.
+
+### Getting the Authorization URL:
 
 ```javascript
-const session = {} // Use your session management solution
-// You can also pass req.session into methods that require
-// the session parameter from an express.js route
-
-async function login() {
-	const authUrl = await xoAuth.getAuthorizationURL(session)
-	// Redirect the user to authUrl for authentication or create a link ot it
-}
+const authUrl = await xoAuth.getAuthorizationURL(req.session)
+// Redirect the user to authUrl
 ```
 
-4. Handle the OAuth callback:
+### Handling the Callback from X:
 
 ```javascript
-async function handleCallback(code) {
-	try {
-		const userData = await xoAuth.handleCallback(code, session)
-		// Store userData in your session or database
-		// Redirect the user to a protected route or display data
-	} catch (error) {
-		console.error("Authentication failed:", error.message)
-		// Handle the error, redirect to login
+await xoAuth.handleCallback(code, req.session)
+// User is now authenticated, onSessionUpdate callback will trigger
+```
+
+### Making an Authenticated GET Request:
+
+```javascript
+const user = await xoAuth.get(
+	"users/by/username/lxixthenumber",
+	{ "user.fields": "profile_image_url,description" },
+	{
+		Authorization: `Bearer ${req.session.user.accessToken}`
+	},
+	session
+)
+```
+
+### Making an Authenticated POST Request:
+
+```javascript
+const tweet = await xoAuth.post(
+	"tweets",
+	{ text: "Hello, X!" },
+	{
+		Authorization: `Bearer ${req.session.user.accessToken}`
+	},
+	session
+)
+```
+
+### Refreshing the Token
+
+```javascript
+await xoAuth.refreshToken(req.session)
+// Token has been refreshed, onSessionUpdate callback will trigger
+```
+
+### Logging Out
+
+```javascript
+await xoAuth.logout(req.session)
+// User is now logged out, onSessionUpdate callback will trigger
+```
+
+Remember to set up your environment variables (X_CLIENT_ID, X_CLIENT_SECRET) before using the library.
+
+**Note:** For production use, it's highly recommended to implement proper error handling. The examples above omit error handling for brevity, but robust error management is crucial for a reliable application.
+
+## Using onSessionUpdate
+
+The `onSessionUpdate` function is a callback that gets triggered whenever the session data is updated. This can be useful for logging, debugging, or performing additional actions when the session changes.
+
+You can provide this function in two ways:
+
+1. In the constructor:
+
+```javascript
+const xoAuth = new XOAuth2(
+	"YOUR_CLIENT_ID",
+	"YOUR_CLIENT_SECRET",
+	"http://your/callback/url",
+	(oldData, newData, sessionId) => {
+		console.log("Session updated: " + { oldData, newData, sessionId })
 	}
-}
+)
 ```
 
-5. Make authenticated requests:
+2. By setting it after initialization:
 
 ```javascript
-async function fetchTweets() {
-	try {
-		const tweetData = await xoAuth.get(
-			//endpoint example goes to https://api.x.com/2/tweets
-			"tweets",
-			// Parameters
-			{ ids: "tweet_id" },
-			// Headers -- always pass the Bearer token if available
-			{ Authorization: `Bearer ${session.user.accessToken}` }
-		)
-		// Display or process the tweetData
-	} catch (error) {
-		console.error("Request failed:", error.message)
-		// Handle the error
-	}
+xoAuth.onSessionUpdate = (oldData, newData, sessionId) => {
+	console.log("Session updated: " + { oldData, newData, sessionId })
 }
 ```
 
-6. Logout:
+The `onSessionUpdate` function provided in the constructor can be overwritten by setting it after initialization. This allows you to change the behavior dynamically if needed.
+
+## API Reference
+
+### Constructor
 
 ```javascript
-async function logout() {
-	try {
-		await xoAuth.logout(session)
-		// Clear user data from your session
-		// Redirect the user to the login page
-	} catch (error) {
-		console.error("Logout failed:", error.message)
-		// Handle the error
-	}
-}
+const xoAuth = new XOAuth2(clientId, clientSecret, redirectUri, onSessionUpdate)
 ```
 
-The library automatically refreshes tokens when needed, but you may also do so with the refreshToken method
+- `clientId`: Your X API client ID
+- `clientSecret`: Your X API client secret
+- `redirectUri`: The callback URL for the OAuth flow
+- `onSessionUpdate`: (optional) A function that will be called when the session is updated
 
-```javascript
-async function refreshAccessToken() {
-	try {
-		await xoAuth.refreshToken()
-		// The session.user object is updated with the new access token
-		console.log("Access token refreshed successfully")
-	} catch (error) {
-		console.error("Token refresh failed:", error.message)
-		// Handle the error, such as redirecting to login
-	}
-}
-```
+### Methods
 
-## Error Handling
+- `getAuthorizationURL(session)`: Generates the authorization URL for the OAuth flow
+- `handleCallback(code, session)`: Handles the callback from the OAuth provider
+- `refreshToken(session)`: Refreshes the access token
+- `logout(session)`: Logs out the user by clearing the session
+- `sendRequest(session)`: Sends a request to the X API
 
-The library throws errors for various scenarios. Always wrap your calls in try-catch blocks:
+### Convenience Methods
 
-```javascript
-try {
-	// XOAuth method calls
-} catch (error) {
-	console.error("XOAuth error:", error.message)
-	// Handle the error appropriately
-}
-```
+- `get(endpoint, params, headers, session)`: Makes a GET request to the X API
+- `post(endpoint, body, headers, session)`: Makes a POST request to the X API
+- `put(endpoint, body, headers, session)`: Makes a PUT request to the X API
+- `patch(endpoint, body, headers, session)`: Makes a PATCH request to the X API
+- `delete(endpoint, body, headers, session)`: Makes a DELETE request to the X API
 
-## Security Considerations
-
-- Always store your client secret securely and never expose it to the client-side.
-- Use HTTPS for all OAuth-related communications.
-- The library implements CSRF protection using the state parameter in the authorization URL.
-- Ensure proper session management to securely store and handle user tokens.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+Session parameters are any object, but an express.js session (req.session) is suitable. A `user` property will be appended to any session object you pass it, and it must contain an `id` property to function properly.
 
 ## License
 
-This project is released under the Creative Commons Zero (CC0) 1.0 Universal license.
+This project is licensed under the Creative Commons Zero v1.0 Universal (CC0-1.0) license. This means you can copy, modify, distribute and perform the work, even for commercial purposes, all without asking permission.
 
-To the extent possible under law, the author(s) have dedicated all copyright and related and neighboring rights to this software to the public domain worldwide. This software is distributed without any warranty.
-
-You should have received a copy of the CC0 Public Domain Dedication along with this software. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
+For more information, see [https://creativecommons.org/publicdomain/zero/1.0/](https://creativecommons.org/publicdomain/zero/1.0/)

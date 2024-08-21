@@ -1,6 +1,6 @@
 {
   "name": "xoxoauth2",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "A library for X (Twitter) OAuth 2.0 authentication",
   "main": "src/xoauth2.js",
   "scripts": {

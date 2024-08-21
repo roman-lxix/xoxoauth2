@@ -8,12 +8,34 @@ class XOAuth {
 	 * @param {string} clientSecret - The OAuth 2.0 client secret.
 	 * @param {string} redirectUri - The redirect URI for the OAuth flow.
 	 */
-	constructor(clientId, clientSecret, redirectUri) {
+	constructor(clientId, clientSecret, redirectUri, sessionUpdateCallback) {
 		this.clientId = clientId
 		this.clientSecret = clientSecret
 		this.redirectUri = redirectUri
 		this.API_BASE_URL = "https://api.x.com/2/"
 		this.AUTH_URL = "https://x.com/i/oauth2/authorize"
+		this.sessionUpdateCallback = sessionUpdateCallback
+	}
+
+	/**
+	 * Register a callback function to be called when the session is updated.
+	 * @param {function} callback - The function to be called on session update.
+	 */
+	onSessionUpdate(callback) {
+		this.sessionUpdateCallback = callback
+	}
+
+	/**
+	 * Trigger the session update callback if it exists.
+	 * @param {Object} newData - The new session data.
+	 * @param {Object} oldData - The old session data.
+	 * @param {string} sessionId - The session identifier.
+	 * @private
+	 */
+	_triggerSessionUpdateCallback(oldData, newData, sessionId) {
+		if (this.sessionUpdateCallback) {
+			this.sessionUpdateCallback(oldData, newData, sessionId)
+		}
 	}
 
 	/**
@@ -62,6 +84,7 @@ class XOAuth {
 
 	/**
 	 * Initiate the OAuth flow by generating the authorization URL.
+	 * @param {Object} session - The session object to store the code verifier.
 	 * @returns {Promise<string>} The authorization URL.
 	 */
 	async getAuthorizationURL(session) {
@@ -88,6 +111,7 @@ class XOAuth {
 	/**
 	 * Handle the OAuth callback, exchange code for tokens, and fetch user data.
 	 * @param {string} code - The authorization code received from the OAuth provider.
+	 * @param {Object} session - The session object containing the code verifier.
 	 * @returns {Promise<Object>} The user data including access and refresh tokens.
 	 * @throws {Error} If authentication fails.
 	 */
@@ -128,7 +152,11 @@ class XOAuth {
 				refreshToken: refresh_token
 			}
 
+			const oldData = session.user
 			session.user = user
+
+			// Trigger session update callback
+			this._triggerSessionUpdateCallback(oldData, user, session.id)
 
 			return user
 		} catch (error) {
@@ -139,10 +167,11 @@ class XOAuth {
 
 	/**
 	 * Log out the user by revoking the access token and clearing the session.
+	 * @param {Object} session - The session object containing the user's access token.
 	 * @returns {Promise<void>}
 	 */
 	async logout(session) {
-		console.log(session)
+		const oldData = { ...session.user }
 
 		if (session && session.user && session.user.accessToken) {
 			try {
@@ -166,7 +195,9 @@ class XOAuth {
 			}
 		}
 
-		// Clear the user data and code verifier from the session
+		// Clear the sessiont
+		this._triggerSessionUpdateCallback(oldData, undefined, session.id)
+
 		session.destroy()
 	}
 
@@ -176,6 +207,7 @@ class XOAuth {
 	 * @param {string} url - The API endpoint.
 	 * @param {Object} [data={}] - The request data.
 	 * @param {Object} [headers={}] - Additional headers.
+	 * @param {Object} session - The session object.
 	 * @returns {Promise<Object>} The parsed JSON response.
 	 * @throws {Error} If the request fails or returns an error status.
 	 */
@@ -211,9 +243,7 @@ class XOAuth {
 		) {
 			try {
 				await this.refreshToken(session)
-				// Update the headers with the new access token
 				options.headers.Authorization = `Bearer ${session.user.accessToken}`
-				// Retry the request
 				response = await fetch(url, options)
 			} catch (error) {
 				console.error("Token refresh failed:", error)
@@ -237,7 +267,8 @@ class XOAuth {
 
 	/**
 	 * Refresh the access token using the refresh token.
-	 * @returns {Promise<void>}
+	 * @param {Object} session - The session object containing the user's refresh token.
+	 * @returns {Promise<Object>} An object containing the new access token and refresh token.
 	 * @throws {Error} If token refresh fails.
 	 */
 	async refreshToken(session) {
@@ -264,8 +295,12 @@ class XOAuth {
 
 			const tokenData = await response.json()
 
+			const oldData = { ...session.user }
 			session.user.refreshToken = tokenData.refresh_token
 			session.user.accessToken = tokenData.access_token
+
+			// Trigger session update callback
+			this._triggerSessionUpdateCallback(oldData, session.user, session.id)
 
 			return {
 				accessToken: tokenData.access_token,
@@ -282,10 +317,11 @@ class XOAuth {
 	 * @param {string} url - The API endpoint.
 	 * @param {Object} [data={}] - Query parameters.
 	 * @param {Object} [headers={}] - Additional headers.
+	 * @param {Object} session - The session object.
 	 * @returns {Promise<Object>} The parsed JSON response.
 	 */
 	async get(url, data = {}, headers = {}, session) {
-		return this.sendRequest("GET", url, data, headers)
+		return this.sendRequest("GET", url, data, headers, session)
 	}
 
 	/**
@@ -293,10 +329,11 @@ class XOAuth {
 	 * @param {string} url - The API endpoint.
 	 * @param {Object} [data={}] - The request body.
 	 * @param {Object} [headers={}] - Additional headers.
+	 * @param {Object} session - The session object.
 	 * @returns {Promise<Object>} The parsed JSON response.
 	 */
 	async post(url, data = {}, headers = {}, session) {
-		return this.sendRequest("POST", url, data, headers)
+		return this.sendRequest("POST", url, data, headers, session)
 	}
 
 	/**
@@ -304,10 +341,11 @@ class XOAuth {
 	 * @param {string} url - The API endpoint.
 	 * @param {Object} [data={}] - The request body.
 	 * @param {Object} [headers={}] - Additional headers.
+	 * @param {Object} session - The session object.
 	 * @returns {Promise<Object>} The parsed JSON response.
 	 */
 	async patch(url, data = {}, headers = {}, session) {
-		return this.sendRequest("PATCH", url, data, headers)
+		return this.sendRequest("PATCH", url, data, headers, session)
 	}
 
 	/**
@@ -315,10 +353,11 @@ class XOAuth {
 	 * @param {string} url - The API endpoint.
 	 * @param {Object} [data={}] - The request body.
 	 * @param {Object} [headers={}] - Additional headers.
+	 * @param {Object} session - The session object.
 	 * @returns {Promise<Object>} The parsed JSON response.
 	 */
 	async put(url, data = {}, headers = {}, session) {
-		return this.sendRequest("PUT", url, data, headers)
+		return this.sendRequest("PUT", url, data, headers, session)
 	}
 
 	/**
@@ -326,10 +365,11 @@ class XOAuth {
 	 * @param {string} endpoint - The API endpoint.
 	 * @param {Object} [data={}] - The request body.
 	 * @param {Object} [headers={}] - Additional headers.
+	 * @param {Object} session - The session object.
 	 * @returns {Promise<Object>} The parsed JSON response.
 	 */
 	async delete(endpoint, data = {}, headers = {}, session) {
-		return this.sendRequest("DELETE", endpoint, data, headers)
+		return this.sendRequest("DELETE", endpoint, data, headers, session)
 	}
 }
 
