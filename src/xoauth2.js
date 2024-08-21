@@ -326,5 +326,9 @@ class XOAuth {
 		return this.sendRequest("DELETE", endpoint, data, headers)
 	}
 }
+export default XOAuth;
 
-module.exports = XOAuth
+// For CommonJS compatibility (optional)
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = XOAuth;
+}
