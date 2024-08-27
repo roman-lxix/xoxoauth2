@@ -4,7 +4,7 @@
   "description": "A library for X (Twitter) OAuth 2.0 authentication",
   "main": "src/xoauth2.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest"
   },
   "keywords": [
     "x",
@@ -13,5 +13,14 @@
     "authentication"
   ],
   "author": "Roman LXIX",
-  "license": "CC0-1.0"
+  "license": "CC0-1.0",
+  "devDependencies": {
+    "@babel/core": "^7.x.x",
+    "@babel/preset-env": "^7.x.x",
+    "jest": "^29.x.x"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/src/**/*.test.js"]
+  }
 }
