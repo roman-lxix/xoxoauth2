@@ -43,6 +43,7 @@ describe('XOAuth', () => {
         xoauth = new XOAuth(mockClientId, mockClientSecret, mockRedirectUri, mockSessionUpdateCallback);
         global.fetch = jest.fn(() => Promise.resolve({
             ok: true,
+            status: 200,
             json: () => Promise.resolve({})
         }));
     });
@@ -310,6 +311,7 @@ describe('XOAuth', () => {
             beforeEach(() => {
                 global.fetch = jest.fn(() => Promise.resolve({
                     ok: true,
+                    status: 200,
                     json: () => Promise.resolve(mockResponseData)
                 }));
             });
@@ -380,7 +382,8 @@ describe('XOAuth', () => {
             test('handles token refresh on 401 status', async () => {
                 global.fetch.mockResolvedValueOnce({
                     status: 401,
-                    ok: false
+                    ok: false,
+                    json: () => Promise.resolve({ error: 'Unauthorized' })
                 }).mockResolvedValueOnce({
                     ok: true,
                     json: () => Promise.resolve(mockResponseData)
@@ -396,7 +399,8 @@ describe('XOAuth', () => {
             test('throws error on rate limit exceeded', async () => {
                 global.fetch.mockResolvedValueOnce({
                     status: 429,
-                    ok: false
+                    ok: false,
+                    json: () => Promise.resolve({ error: 'Rate limit exceeded' })
                 });
 
                 await expect(xoauth.get(mockEndpoint, mockParams, mockHeaders, mockSession))
@@ -415,6 +419,7 @@ describe('XOAuth', () => {
                 global.fetch = jest.fn(() =>
                     Promise.resolve({
                         ok: true,
+                        status: 200,
                         json: () => Promise.resolve(mockResponseData)
                     })
                 );
@@ -497,6 +502,219 @@ describe('XOAuth', () => {
 
                 const calledBody = global.fetch.mock.calls[0][1].body;
                 expect(calledBody.toString()).toBe('key1=value1&key2=value2');
+            });
+        });
+
+        describe('patch method', () => {
+            const mockEndpoint = 'users/profile';
+            const mockData = { name: 'Updated Name', bio: 'Updated Bio' };
+            const mockHeaders = { 'Authorization': 'Bearer mock_token' };
+            const mockSession = { id: 'mock_session_id' };
+            const mockResponseData = { success: true, data: { id: 'user123', name: 'Updated Name', bio: 'Updated Bio' } };
+
+            beforeEach(() => {
+                global.fetch = jest.fn(() =>
+                    Promise.resolve({
+                        ok: true,
+                        status: 200,
+                        json: () => Promise.resolve(mockResponseData)
+                    })
+                );
+            });
+
+            test('sends PATCH request to correct URL', async () => {
+                await xoauth.patch(mockEndpoint, mockData, mockHeaders, mockSession);
+                const expectedUrl = new URL(mockEndpoint, xoauth.API_BASE_URL);
+
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expectedUrl.toString(),
+                    expect.any(Object)
+                );
+            });
+
+            test('sends correct headers and data', async () => {
+                await xoauth.patch(mockEndpoint, mockData, mockHeaders, mockSession);
+
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...mockHeaders
+                        },
+                        body: JSON.stringify(mockData)
+                    })
+                );
+            });
+
+            test('returns parsed JSON response', async () => {
+                const result = await xoauth.patch(mockEndpoint, mockData, mockHeaders, mockSession);
+
+                expect(result).toEqual(mockResponseData);
+            });
+
+            test('handles empty data and headers', async () => {
+                await xoauth.patch(mockEndpoint);
+
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: '{}'
+                    })
+                );
+            });
+
+            test('calls sendRequest with correct parameters', async () => {
+                jest.spyOn(xoauth, 'sendRequest');
+                await xoauth.patch(mockEndpoint, mockData, mockHeaders, mockSession);
+                expect(xoauth.sendRequest).toHaveBeenCalledWith('PATCH', mockEndpoint, mockData, mockHeaders, mockSession);
+            });
+        });
+
+        describe('put method', () => {
+            const mockEndpoint = 'users/profile';
+            const mockData = { name: 'Updated Name', bio: 'Updated Bio' };
+            const mockHeaders = { 'Authorization': 'Bearer mock_token' };
+            const mockSession = { id: 'mock_session_id' };
+            const mockResponseData = { success: true, data: { id: 'user123', name: 'Updated Name', bio: 'Updated Bio' } };
+
+            beforeEach(() => {
+                global.fetch = jest.fn(() =>
+                    Promise.resolve({
+                        ok: true,
+                        status: 200,
+                        json: () => Promise.resolve(mockResponseData)
+                    })
+                );
+            });
+
+            test('sends PUT request to correct URL', async () => {
+                await xoauth.put(mockEndpoint, mockData, mockHeaders, mockSession);
+                const expectedUrl = new URL(mockEndpoint, xoauth.API_BASE_URL);
+
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expectedUrl.toString(),
+                    expect.any(Object)
+                );
+            });
+
+            test('sends correct headers and data', async () => {
+                await xoauth.put(mockEndpoint, mockData, mockHeaders, mockSession);
+
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...mockHeaders
+                        },
+                        body: JSON.stringify(mockData)
+                    })
+                );
+            });
+
+            test('returns parsed JSON response', async () => {
+                const result = await xoauth.put(mockEndpoint, mockData, mockHeaders, mockSession);
+
+                expect(result).toEqual(mockResponseData);
+            });
+
+            test('handles empty data and headers', async () => {
+                await xoauth.put(mockEndpoint);
+
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: '{}'
+                    })
+                );
+            });
+
+            test('calls sendRequest with correct parameters', async () => {
+                jest.spyOn(xoauth, 'sendRequest');
+                await xoauth.put(mockEndpoint, mockData, mockHeaders, mockSession);
+                expect(xoauth.sendRequest).toHaveBeenCalledWith('PUT', mockEndpoint, mockData, mockHeaders, mockSession);
+            });
+        });
+
+        describe('delete method', () => {
+            const mockEndpoint = 'tweets/123';
+            const mockData = { reason: 'Outdated content' };
+            const mockHeaders = { 'Authorization': 'Bearer mock_token' };
+            const mockSession = { id: 'mock_session_id' };
+            const mockResponseData = { success: true, message: 'Tweet deleted' };
+
+            beforeEach(() => {
+                global.fetch = jest.fn(() =>
+                    Promise.resolve({
+                        ok: true,
+                        status: 200,
+                        json: () => Promise.resolve(mockResponseData)
+                    })
+                );
+            });
+
+            test('sends DELETE request to correct URL', async () => {
+                await xoauth.delete(mockEndpoint, mockData, mockHeaders, mockSession);
+                const expectedUrl = new URL(mockEndpoint, xoauth.API_BASE_URL);
+
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expectedUrl.toString(),
+                    expect.any(Object)
+                );
+            });
+
+            test('sends correct headers and data', async () => {
+                await xoauth.delete(mockEndpoint, mockData, mockHeaders, mockSession);
+
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...mockHeaders
+                        },
+                        body: JSON.stringify(mockData)
+                    })
+                );
+            });
+
+            test('returns parsed JSON response', async () => {
+                const result = await xoauth.delete(mockEndpoint, mockData, mockHeaders, mockSession);
+
+                expect(result).toEqual(mockResponseData);
+            });
+
+            test('handles empty data and headers', async () => {
+                await xoauth.delete(mockEndpoint);
+
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: '{}'
+                    })
+                );
+            });
+
+            test('calls sendRequest with correct parameters', async () => {
+                jest.spyOn(xoauth, 'sendRequest');
+                await xoauth.delete(mockEndpoint, mockData, mockHeaders, mockSession);
+                expect(xoauth.sendRequest).toHaveBeenCalledWith('DELETE', mockEndpoint, mockData, mockHeaders, mockSession);
             });
         });
     });
@@ -595,6 +813,23 @@ describe('XOAuth', () => {
             }));
             await expect(xoauth.refreshToken(mockSession)).rejects.toThrow('Token refresh failed');
             expect(consoleSpy).toHaveBeenCalledWith('Error refreshing token:', expect.any(String));
+        });
+
+        test('throws "Authentication failed" error when token refresh fails', async () => {
+            // Mock the fetch function to simulate a failed API call
+            global.fetch = jest.fn(() => Promise.reject(new Error('API Error')));
+
+            // Spy on console.error
+            const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+
+            // Call refreshToken and expect it to throw
+            await expect(xoauth.refreshToken(mockSession)).rejects.toThrow('Token refresh failed');
+
+            // Check if the error was logged
+            expect(consoleErrorSpy).toHaveBeenCalledWith('Error refreshing token:', 'API Error');
+
+            // Restore the console.error spy
+            consoleErrorSpy.mockRestore();
         });
     });
 
@@ -706,6 +941,84 @@ describe('XOAuth', () => {
                     xoauth._triggerSessionUpdateCallback({}, {}, 'session123');
                 }).not.toThrow();
             });
+        });
+    });
+
+    describe('sendRequest method', () => {
+        const mockUrl = 'test-endpoint';
+        const mockData = { key: 'value' };
+        const mockHeaders = { 'Authorization': 'Bearer token' };
+        const mockSession = { id: 'session123', user: { accessToken: 'access_token' } };
+
+        beforeEach(() => {
+            global.fetch = jest.fn(() => Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve({ success: true })
+            }));
+        });
+
+        test('calls fetch with correct URL for GET request', async () => {
+            await xoauth.sendRequest('GET', mockUrl, mockData, mockHeaders, mockSession);
+            const expectedUrl = `${xoauth.API_BASE_URL}${mockUrl}?key=value`;
+            expect(global.fetch).toHaveBeenCalledWith(expectedUrl, expect.any(Object));
+        });
+
+        test('calls fetch with correct URL for non-GET request', async () => {
+            await xoauth.sendRequest('POST', mockUrl, mockData, mockHeaders, mockSession);
+            const expectedUrl = `${xoauth.API_BASE_URL}${mockUrl}`;
+            expect(global.fetch).toHaveBeenCalledWith(expectedUrl, expect.any(Object));
+        });
+
+        test('uses default empty object for data when not provided', async () => {
+            await xoauth.sendRequest('GET', mockUrl);
+            const expectedUrl = `${xoauth.API_BASE_URL}${mockUrl}`;
+            expect(global.fetch).toHaveBeenCalledWith(expectedUrl, expect.any(Object));
+        });
+
+        test('uses default empty object for headers when not provided', async () => {
+            await xoauth.sendRequest('GET', mockUrl, mockData);
+            expect(global.fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+                headers: {}
+            }));
+        });
+
+        test('throws error when session is not provided and token refresh is needed', async () => {
+            global.fetch = jest.fn().mockResolvedValue({
+                status: 401,
+                ok: false,
+                json: () => Promise.resolve({ error: 'Unauthorized' })
+            });
+
+            await expect(xoauth.sendRequest('GET', mockUrl, mockData, mockHeaders))
+                .rejects.toThrow('HTTP error! status: 401, message: Unauthorized');
+        });
+
+        test('throws "Authentication failed" error when token refresh fails during a request', async () => {
+            const mockSession = {
+                user: {
+                    accessToken: 'old_access_token',
+                    refreshToken: 'old_refresh_token'
+                }
+            };
+
+            global.fetch = jest.fn()
+                .mockResolvedValueOnce({
+                    status: 401,
+                    ok: false,
+                    json: () => Promise.resolve({ error: 'Unauthorized' })
+                })
+                .mockRejectedValueOnce(new Error('Network error'));
+
+            xoauth.refreshToken = jest.fn().mockRejectedValue(new Error('Refresh failed'));
+
+            const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+
+            await expect(xoauth.sendRequest('GET', 'test-endpoint', {}, {}, mockSession))
+                .rejects.toThrow('Authentication failed');
+
+            expect(consoleErrorSpy).toHaveBeenCalledWith('Token refresh failed:', expect.any(Error));
+
+            consoleErrorSpy.mockRestore();
         });
     });
 });

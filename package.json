@@ -4,7 +4,8 @@
   "description": "A library for X (Twitter) OAuth 2.0 authentication",
   "main": "src/xoauth2.js",
   "scripts": {
-    "test": "jest"
+    "test": "jest",
+    "test:coverage": "jest --coverage"
   },
   "keywords": [
     "x",
@@ -21,6 +22,12 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "testMatch": ["**/src/**/*.test.js"]
+    "testMatch": ["**/src/**/*.test.js"],
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/**/*.test.js"
+    ],
+    "collectCoverage": true,
+    "coverageReporters": ["text"]
   }
 }
