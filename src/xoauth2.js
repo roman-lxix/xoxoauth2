@@ -273,6 +273,10 @@ class XOAuth {
 	 */
 	async refreshToken(session) {
 		try {
+			if (!session.user || !session.user.refreshToken) {
+				throw new Error('Refresh token is missing');
+			}
+
 			const response = await fetch(this.API_BASE_URL + "oauth2/token", {
 				method: "POST",
 				headers: {
